@@ -37,7 +37,7 @@ process.once('message', workerArgsJson => {
 	let nodeDebugArgs = [];
 	let sshDebugArgs = [];
 	if (workerArgs.debuggerPort) {
-		nodeDebugArgs = [ `--inspect-brk=0.0.0.0:${workerArgs.debuggerPort}` ]
+		nodeDebugArgs = [ `--inspect-brk=${workerArgs.debuggerPort}` ]
 		sshDebugArgs = [ '-L', `${workerArgs.debuggerPort}:localhost:${workerArgs.debuggerPort}` ];
 	}
 

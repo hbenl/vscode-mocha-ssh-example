@@ -8,5 +8,6 @@
     "editor.insertSpaces": true,
     "editor.tabSize": 2
   },
-  "mochaExplorer.launcherScript": "ssh-launcher.js"
+  "mochaExplorer.launcherScript": "ssh-launcher.js",
+  "mochaExplorer.debuggerConfig": "Debug via ssh"
 }
