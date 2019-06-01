@@ -1,10 +1,7 @@
 const { spawn, execSync } = require('child_process');
 const { readFileSync } = require('fs');
 const { inspect } = require('util');
-const { mochaWorker, receiveConnection, writeMessage, readMessages } = require('vscode-test-adapter-remoting-util');
-
-// TODO:
-// test with a path with spaces
+const { mochaWorker, convertPath, receiveConnection, writeMessage, readMessages } = require('vscode-test-adapter-remoting-util');
 
 const localWorkspace = __dirname;
 const remoteHost = 'host';
@@ -12,27 +9,15 @@ const remoteUser = 'user';
 const remoteWorkspace = `/home/${remoteUser}/tmp/vscode-mocha-ssh`;
 const port = 8123;
 
-function convertPaths(srcPath, dstPath) {
-	return function(path) {
-		if (path.startsWith(srcPath)) {
-			return dstPath + path.substring(srcPath.length)
-		} else {
-			return path;
-		}
-	}
-}
-const localToRemote = convertPaths(localWorkspace, remoteWorkspace);
-const remoteToLocal = convertPaths(remoteWorkspace, localWorkspace);
+const log = msg => process.send(msg);
+const localToRemotePath = path => convertPath(path, localWorkspace, remoteWorkspace);
+const remoteToLocalPath = path => convertPath(path, remoteWorkspace, localWorkspace);
 
-process.once('message', workerArgsJson => {
+process.once('message', async origWorkerArgs => {
 
-	const origWorkerArgs = JSON.parse(workerArgsJson);
-	const localWorker = origWorkerArgs.workerScript;
+	log('Received workerArgs');
 
-	process.send('Received workerArgs');
-
-	const workerArgs = mochaWorker.convertWorkerArgs(origWorkerArgs, localToRemote);
-	workerArgs.mochaPath = localToRemote(origWorkerArgs.mochaPath);
+	const workerArgs = mochaWorker.convertWorkerArgs(origWorkerArgs, localToRemotePath);
 
 	let nodeDebugArgs = [];
 	let sshDebugArgs = [];
@@ -41,11 +26,11 @@ process.once('message', workerArgsJson => {
 		sshDebugArgs = [ '-L', `${workerArgs.debuggerPort}:localhost:${workerArgs.debuggerPort}` ];
 	}
 
-	process.send('Syncing workspace');
-	const rsyncOutput = execSync(`rsync -r "${localWorkspace}"/ "${remoteUser}@${remoteHost}:${remoteWorkspace}"`);
-	process.send(`Output from rsync: ${rsyncOutput.toString()}`);
+	log('Syncing workspace');
+	const rsyncOutput = execSync(`rsync -r ${localWorkspace}/ ${remoteUser}@${remoteHost}:${remoteWorkspace}`);
+	log(`Output from rsync: ${rsyncOutput.toString()}`);
 
-	process.send('Starting worker via ssh');
+	log('Starting worker via ssh');
 	const childProcess = spawn(
 		'ssh',
 		[
@@ -56,39 +41,37 @@ process.once('message', workerArgsJson => {
 			...nodeDebugArgs,
 			'-', `"{\\\"role\\\":\\\"client\\\",\\\"port\\\":${port}}"`
 		],
-		{ stdio: [ 'pipe', 'inherit', 'inherit', 'ipc' ] }
+		{ stdio: [ 'pipe', 'inherit', 'inherit' ] }
 	);
 
-	childProcess.on('error', err => process.send(`Error from ssh: ${inspect(err)}`));
+	childProcess.on('error', err => log(`Error from ssh: ${inspect(err)}`));
 	childProcess.on('exit', (code, signal) => {
-		process.send(`ssh launcher process exited with code ${code} and signal ${signal}`);
+		log(`The ssh process exited with code ${code} and signal ${signal}.`);
 		if ((workerArgs.action === 'loadTests') && (code || signal)) {
-			process.send({ type: 'finished', errorMessage: `The ssh launcher process finished with code ${code} and signal ${signal}.\nThe diagnostic log may contain more information, enable it with the "mochaExplorer.logpanel" or "mochaExplorer.logfile" settings.` });
+			process.send({ type: 'finished', errorMessage: `The ssh process exited with code ${code} and signal ${signal}.\nThe diagnostic log may contain more information, enable it with the "mochaExplorer.logpanel" or "mochaExplorer.logfile" settings.` });
 		}
 	});
 
-	process.send('Sending worker script');
+	log('Sending worker script');
 	childProcess.stdin.write(
-		readFileSync(localWorker),
-		() => process.send('Finished sending worker script')
+		readFileSync(origWorkerArgs.workerScript),
+		() => log('Finished sending worker script')
 	);
 	childProcess.stdin.end();
 
-	process.send('Connecting to worker process');
-	receiveConnection(port).then(socket => {
+	log('Connecting to worker process');
+	const socket = await receiveConnection(port);
 
-		process.send('Connected - sending workerArgs to worker process');
+	log('Sending workerArgs to worker process');
+	await writeMessage(socket, workerArgs);
 
-		writeMessage(socket, workerArgs);
+	log('Finished initialising worker');
 
-		process.send('Finished sending workerArgs to worker process');
-
-		readMessages(socket, msg => {
-			if (workerArgs.action === 'loadTests') {
-				process.send(mochaWorker.convertTestLoadMessage(msg, remoteToLocal));
-			} else {
-				process.send(mochaWorker.convertTestRunMessage(msg, remoteToLocal));
-			}
-		});
+	readMessages(socket, msg => {
+		if (workerArgs.action === 'loadTests') {
+			process.send(mochaWorker.convertTestLoadMessage(msg, remoteToLocalPath));
+		} else {
+			process.send(mochaWorker.convertTestRunMessage(msg, remoteToLocalPath));
+		}
 	});
 });
