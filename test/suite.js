@@ -5,7 +5,7 @@ describe("Tests run remotely", function() {
 
 	it("should really run on the remote host", function() {
 		// change 'host' to the hostname for your remote machine
-		assert.strictEqual(os.hostname(), 'privalov');
+		assert.strictEqual(os.hostname(), 'host');
 	});
 
 	it("should be able to access configured environment variables", function() {

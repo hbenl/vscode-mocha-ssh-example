@@ -5,15 +5,12 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"type": "node",
+			"type": "pwa-node",
 			"request": "attach",
 			"name": "Debug via ssh",
-			"port": 9229,
-			"protocol": "inspector",
 			"timeout": 30000,
-			"stopOnEntry": false,
-			"localRoot": "${workspaceFolder}",
-			"remoteRoot": "/home/marvin/tmp/vscode-mocha-ssh"
+			"continueOnAttach": true,
+			"remoteRoot": "/vscode-mocha-ssh"
 		}
 	]
 }
